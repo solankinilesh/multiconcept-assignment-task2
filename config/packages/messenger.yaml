@@ -1,0 +1,32 @@
+framework:
+    messenger:
+        failure_transport: failed
+
+        transports:
+            webhooks:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                # 3 retries with exponential backoff: 1s → 5s → 25s. Provider sent us a real
+                # event; if our processor fails transiently (DB blip, downstream timeout) we
+                # want to retry, but not forever. After exhaustion the message moves to `failed`.
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 5
+                    max_delay: 0
+                options:
+                    auto_setup: true
+
+            failed:
+                dsn: '%env(MESSENGER_FAILED_DSN)%'
+                options:
+                    auto_setup: true
+
+        routing:
+            App\Message\ProcessWebhook: webhooks
+
+when@test:
+    framework:
+        messenger:
+            transports:
+                webhooks: 'in-memory://'
+                failed: 'in-memory://'
