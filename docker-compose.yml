@@ -1,0 +1,43 @@
+name: task2-webhooks
+
+services:
+  php:
+    build: ./docker/php
+    volumes:
+      - .:/var/www/html
+    healthcheck:
+      test: ["CMD", "php-fpm", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [app]
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      php:
+        condition: service_healthy
+    networks: [app]
+
+  # The async worker. `restart: on-failure` covers the bootstrap window: it'll error out
+  # until `make install` populates vendor/ and `make migrate` creates messenger_messages,
+  # then keep itself alive and consuming. Stop and start it explicitly via the Makefile
+  # if you want clean foreground logs (recommended for the manual-testing walkthrough).
+  worker:
+    build: ./docker/php
+    command: php bin/console messenger:consume webhooks --time-limit=3600 -vv
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      php:
+        condition: service_healthy
+    restart: on-failure
+    networks: [app]
+
+networks:
+  app:

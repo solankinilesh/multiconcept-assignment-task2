@@ -115,20 +115,37 @@ HTTP POST /webhooks/{provider}
 
 ## Quick start
 
+The repo ships with a Docker Compose setup so reviewers don't need a local PHP install.
+Three commands and the receiver is up:
+
+```bash
+make up         # build + start php-fpm + nginx (one-time build, ~30s)
+make install    # composer install inside the container
+make migrate    # create the SQLite schema
+```
+
+The HTTP server is now on http://127.0.0.1:8000. To run the async worker in a second
+terminal so you can watch processing live:
+
+```bash
+make worker     # foreground; Ctrl+C to stop
+```
+
+`make help` lists every target. `make down` stops the stack.
+
+### Without Docker
+
+If you have PHP 8.3 + Composer locally:
+
 ```bash
 composer install
 php bin/console doctrine:migrations:migrate -n
-
-# Terminal 1 — HTTP server
-symfony server:start
-# or: php -S 127.0.0.1:8000 -t public
-
-# Terminal 2 — async worker
-php bin/console messenger:consume webhooks -vv
+php -S 127.0.0.1:8000 -t public          # terminal 1
+php bin/console messenger:consume webhooks -vv   # terminal 2
 ```
 
-That's it — SQLite ships with PHP, and the Doctrine messenger transport reuses the same
-database. No Docker, no Redis, no MySQL.
+SQLite ships with PHP and the Doctrine messenger transport reuses the same database, so
+nothing else needs to be installed — no Redis, no MySQL.
 
 ## Manual testing
 
@@ -139,14 +156,17 @@ and operator inspection.
 
 ## Running the test suite
 
+Inside the compose env:
+
 ```bash
-vendor/bin/phpunit            # 36 tests, ~80ms
-vendor/bin/phpstan analyse    # level 8, zero errors
-vendor/bin/php-cs-fixer fix --dry-run --diff   # Symfony preset, snake_case test names
+make test       # phpunit — 36 tests, ~100ms
+make stan       # phpstan level 8 — zero errors
+make cs         # php-cs-fixer — Symfony preset, snake_case test names
 ```
 
-Coverage on the critical paths (controller, signature verifiers, providers, message
-handler) is between 83% and 100%.
+Or directly: `docker compose exec php vendor/bin/phpunit` etc. Coverage on the critical
+paths (controller, signature verifiers, providers, message handler) is between 83% and
+100%.
 
 ## Adding a new provider
 
@@ -202,6 +222,7 @@ src/
 tests/                 # mirror of src/, plus tests/bootstrap.php for schema setup
 migrations/            # one migration: initial schema
 config/                # standard Symfony config; messenger.yaml has the retry strategy
+docker/                # Dockerfile + nginx config used by docker-compose.yml
 bin/sign-payload.php   # dev helper for hand-crafting valid signatures (NOT for prod)
 ```
 

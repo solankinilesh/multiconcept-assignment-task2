@@ -1,0 +1,14 @@
+# Don't ship local state into image build contexts. Compose mounts the project anyway,
+# so this only affects `docker build` (Dockerfile is tiny — keeps the layer cache small).
+.git
+.idea
+.vscode
+.claude
+var/
+vendor/
+.env.local
+.env.*.local
+.phpunit.cache
+.php-cs-fixer.cache
+node_modules/
+.DS_Store

@@ -1,32 +1,49 @@
-.PHONY: help install migrate test stan cs serve worker clean
+.PHONY: help up down build logs sh install migrate test stan cs worker drain clean
 
-PHP ?= php
-COMPOSER ?= composer
-CONSOLE := $(PHP) bin/console
+# Routes every PHP command through the `php` service so reviewers don't need a local
+# PHP/Composer install. Override these vars to use a host PHP if you have one.
+DC ?= docker compose
+PHP_EXEC ?= $(DC) exec -T php
+CONSOLE := $(PHP_EXEC) php bin/console
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-install: ## composer install
-	$(COMPOSER) install
+up: ## Start php + nginx (worker stays off so its logs don't drown out HTTP logs)
+	$(DC) up -d php nginx
+
+down: ## Stop and remove all services
+	$(DC) down
+
+build: ## Rebuild the php image (do this if Dockerfile or php.ini changes)
+	$(DC) build --no-cache php
+
+logs: ## Tail container logs
+	$(DC) logs -f
+
+sh: ## Open a shell inside the php container
+	$(DC) exec php bash
+
+install: ## composer install inside the php container
+	$(PHP_EXEC) composer install
 
 migrate: ## Apply doctrine migrations
 	$(CONSOLE) doctrine:migrations:migrate --no-interaction
 
 test: ## Run phpunit
-	$(PHP) bin/phpunit
+	$(PHP_EXEC) php bin/phpunit
 
-stan: ## Run phpstan
-	vendor/bin/phpstan analyse --memory-limit=512M
+stan: ## Run phpstan at level 8
+	$(PHP_EXEC) vendor/bin/phpstan analyse --memory-limit=512M
 
-cs: ## (placeholder) format code — wire php-cs-fixer here if needed
-	@echo "no cs tool wired"
+cs: ## Run php-cs-fixer (apply changes)
+	$(PHP_EXEC) sh -c 'PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix'
 
-serve: ## Built-in PHP server on :8000
-	$(PHP) -S 127.0.0.1:8000 -t public
+worker: ## Run the async worker in the foreground (Ctrl+C to stop)
+	$(DC) run --rm worker php bin/console messenger:consume webhooks -vv
 
-worker: ## Run the messenger worker for the webhooks transport
-	$(CONSOLE) messenger:consume webhooks -vv
+drain: ## Drain the failure transport (retry messages that exhausted retries)
+	$(DC) run --rm worker php bin/console messenger:consume failed -vv --limit=20
 
 clean: ## Drop the dev DB and clear caches
 	rm -f var/data_*.db
